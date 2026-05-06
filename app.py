@@ -1,5 +1,6 @@
 import streamlit as st
 from google import genai
+import os
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Chatbot", page_icon="💬")
@@ -7,13 +8,21 @@ st.title("💬 General Chatbot")
 
 # ── Initialize client (persist across reruns) ────────────────────────────────
 if "client" not in st.session_state:
-    st.session_state.client = genai.Client(api_key="AIzaSyBOBqUBzxzJ-wzvm6Xli2Mcf6AEAO-K0ck")
-    # 👉 Better: use st.secrets["AIzaSyBOBqUBzxzJ-wzvm6Xli2Mcf6AEAO-K0ck"]
+    api_key = st.secrets.get("google_api_key") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        st.error("❌ API key not found. Please set GOOGLE_API_KEY in secrets.")
+        st.stop()
+    st.session_state.client = genai.Client(api_key=api_key)
 
 # ── Load KB & create chat (only once) ────────────────────────────────────────
 if "chat" not in st.session_state:
-    with open("general_chatbot_dataset.txt", "r", encoding="utf-8") as f:
-        kb = f.read()
+    kb_path = os.path.join(os.path.dirname(__file__), "general_chatbot_dataset.txt")
+    try:
+        with open(kb_path, "r", encoding="utf-8") as f:
+            kb = f.read()
+    except FileNotFoundError:
+        st.error(f"❌ Knowledge base file not found at {kb_path}")
+        st.stop()
 
     prompt = f"""
 You are a general chatbot. Your job is to provide answers based ONLY on the knowledge base below.
@@ -28,7 +37,7 @@ Knowledge Base:
 """
 
     st.session_state.chat = st.session_state.client.chats.create(
-        model="gemini-2.5-flash",
+        model="gemini-2.0-flash",
         config={"system_instruction": prompt},
     )
 
@@ -54,8 +63,11 @@ if user_input := st.chat_input("Ask something..."):
     try:
         response = chat.send_message(user_input)
         reply = response.text
+    except ValueError as e:
+        reply = f"⚠️ Validation Error: {str(e)}"
     except Exception as e:
-        reply = f"⚠️ Error: {str(e)}"
+        st.error(f"An error occurred: {str(e)}")
+        reply = "⚠️ Unable to generate response. Please try again."
 
     # Store and display assistant reply
     st.session_state.messages.append({"role": "assistant", "content": reply})
